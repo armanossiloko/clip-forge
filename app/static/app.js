@@ -83,7 +83,7 @@ function briefHTML() {
       <select data-b="mode">${MODES.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></label>
     <p class="bf-help"></p>
     <textarea data-b="instructions" rows="2"></textarea>
-    <details class="bf-more">
+    <details class="bf-more" open>
       <summary></summary>
       <div class="bf-grid">
         <label data-for="count">Reels <input type="number" data-b="num_clips" min="1" max="30"></label>
@@ -165,7 +165,26 @@ async function loadBriefDefaults() {
 }
 setupBrief($("#newBrief"), {}, briefDefaults);
 
-// ---------------------------------------------------------------- new jobs
+// ---------------------------------------------------------------- new jobs (a modal)
+const newDlg = $("#newDlg");
+function openNew() {
+  if (!newDlg.open) newDlg.showModal();
+  $("#urlInput").focus();
+}
+$("#newBtn").onclick = openNew;
+$("#emptyNewBtn").onclick = openNew;
+$("#newClose").onclick = () => newDlg.close();
+newDlg.addEventListener("mousedown", (e) => { if (e.target === newDlg) newDlg.close(); });  // click on the dimmed backdrop
+// Drag a file anywhere onto the page: the dialog opens and takes the drop.
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+window.addEventListener("dragenter", (e) => { if (hasFiles(e) && !document.querySelector("dialog[open]:not(#newDlg)")) openNew(); });
+window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("drop", (e) => {  // dropped outside the drop box (e.g. on the backdrop): still upload it
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (newDlg.open && !e.target.closest?.("#drop") && e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+});
+
 $("#urlForm").onsubmit = async (e) => {
   e.preventDefault();
   const v = $("#urlInput").value.trim();
@@ -176,6 +195,7 @@ $("#urlForm").onsubmit = async (e) => {
   try {
     const job = await api("/api/jobs", { json: body });
     $("#urlInput").value = "";
+    newDlg.close();
     state.selected = job.id;
     await refresh();
   } catch (err) { toast(err.message, true); }
@@ -200,6 +220,7 @@ function upload(file) {
     status.textContent = "";
     if (xhr.status >= 200 && xhr.status < 300) {
       state.selected = JSON.parse(xhr.responseText).id;
+      newDlg.close();
       await refresh();
     } else {
       let m = xhr.statusText; try { m = JSON.parse(xhr.responseText).detail; } catch {}

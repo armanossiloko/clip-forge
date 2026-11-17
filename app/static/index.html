@@ -16,19 +16,7 @@
 
 <div class="layout">
   <aside class="sidebar">
-    <section class="new-card">
-      <h2>New video</h2>
-      <form id="urlForm" class="row">
-        <input id="urlInput" type="text" placeholder="Paste a YouTube link or a file path (C:\Videos\talk.mp4)" autocomplete="off">
-        <button class="btn primary" type="submit">Go</button>
-      </form>
-      <div class="brief" id="newBrief"></div>
-      <label class="drop" id="drop">
-        <input type="file" id="fileInput" accept="video/*" hidden>
-        <span><strong>Drop a video here</strong> or click to choose</span>
-        <small id="uploadStatus"></small>
-      </label>
-    </section>
+    <button class="btn primary new-btn" id="newBtn" type="button">＋ New video</button>
     <h3 class="list-title">Videos</h3>
     <ul class="job-list" id="jobList"></ul>
   </aside>
@@ -38,10 +26,28 @@
       <div class="empty-phone"><div></div><div></div><div></div></div>
       <h1>Turn long videos into shorts</h1>
       <p>Paste a link or drop a file. ClipForge transcribes it, asks Claude for the strongest moments, and renders vertical clips with captions, ready for TikTok, YouTube Shorts and Reels.</p>
+      <button class="btn primary" id="emptyNewBtn" type="button">＋ New video</button>
     </div>
     <div id="jobView" hidden></div>
   </main>
 </div>
+
+<dialog id="newDlg" class="new-dlg">
+  <section class="new-card">
+    <h2>New video</h2>
+    <button class="close" id="newClose" type="button" title="Close (Esc)">✕</button>
+    <form id="urlForm" class="row">
+      <input id="urlInput" type="text" placeholder="Paste a YouTube link or a file path (C:\Videos\talk.mp4)" autocomplete="off">
+      <button class="btn primary" type="submit">Go</button>
+    </form>
+    <div class="brief" id="newBrief"></div>
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept="video/*" hidden>
+      <span><strong>Drop a video here</strong> or click to choose</span>
+      <small id="uploadStatus"></small>
+    </label>
+  </section>
+</dialog>
 
 <dialog id="settingsDlg">
   <form method="dialog" id="settingsForm" class="settings">
@@ -61,7 +67,7 @@
       </label>
       <div class="wide test-row"><button type="button" class="btn small" id="claudeTest">Test Claude</button><span class="test-result" id="claudeTestResult"></span></div>
       <label class="wide">About your channel (Claude sees this on every video)
-        <textarea name="extra_instructions" rows="3" placeholder="e.g. My channel is about fitness for beginners. Write captions in Bosnian. (What to look for in a particular video goes in the box under New video.)"></textarea>
+        <textarea name="extra_instructions" rows="3" placeholder="e.g. My channel is about fitness for beginners. Write captions in Bosnian. (What to look for in a particular video goes in the New video window.)"></textarea>
       </label>
     </fieldset>
     <fieldset>

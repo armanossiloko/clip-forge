@@ -85,7 +85,7 @@ Double-click `setup.bat` once. It installs Python, ffmpeg, Deno and Claude Code 
 
 | Setting | What it does |
 |---|---|
-| About your channel | The most useful one. Claude sees it on every video: your channel, audience and language, e.g. *"Fitness channel for beginners. Write captions in Bosnian."* What to look for in one particular video goes in the box under **New video**. |
+| About your channel | The most useful one. Claude sees it on every video: your channel, audience and language, e.g. *"Fitness channel for beginners. Write captions in Bosnian."* What to look for in one particular video goes in the box in the **＋ New video** window. |
 | Clips per video / min / max length | The starting values for new videos (you can change them per video). 20–60 s works well everywhere. |
 | Framing | Smart (recommended), always follow the face, center crop, or always the whole frame. |
 | Claude model | Default, Opus (best judgement) or Haiku (fastest). |

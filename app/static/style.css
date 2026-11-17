@@ -63,7 +63,19 @@ textarea { resize: vertical; }
 .sidebar { border-right: 1px solid var(--line); padding: 18px; overflow-y: auto; }
 .main { overflow-y: auto; padding: 24px 28px 60px; }
 
-.new-card h2 { font-size: 15px; margin-bottom: 10px; }
+.new-btn { width: 100%; justify-content: center; }
+.empty .btn { margin-top: 18px; }
+/* "New video" is a modal over a light dim (~65 % see-through) */
+.new-dlg { width: min(560px, 94vw); overflow: visible; box-shadow: 0 24px 80px #000a; }
+.new-dlg::backdrop { background: rgb(0 0 0 / .35); backdrop-filter: blur(2px); }
+.new-card { position: relative; padding: 22px 24px 24px; }
+.new-card h2 { font-size: 17px; margin: 0 0 14px; }
+.new-card .close {
+  position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 99px;
+  border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 14px;
+}
+.new-card .close:hover { color: var(--text); border-color: #3a3f4a; }
+.new-card .drop { padding: 30px 10px; }
 .drop {
   margin-top: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 20px 10px; text-align: center;
