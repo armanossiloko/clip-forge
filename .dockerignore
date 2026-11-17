@@ -1,0 +1,10 @@
+.git
+.env
+.venv
+data
+models
+videos
+**/__pycache__
+*.pyc
+*.zip
+.github

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipForge</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='9' y='3' width='14' height='26' rx='3' fill='%23FFD400'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark"></span>ClipForge</div>
+  <div class="health" id="health"></div>
+  <button class="btn ghost" id="settingsBtn">Settings</button>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="new-card">
+      <h2>New video</h2>
+      <form id="urlForm" class="row">
+        <input id="urlInput" type="text" placeholder="Paste a YouTube link or a file path (C:\Videos\talk.mp4)" autocomplete="off">
+        <button class="btn primary" type="submit">Go</button>
+      </form>
+      <div class="brief" id="newBrief"></div>
+      <label class="drop" id="drop">
+        <input type="file" id="fileInput" accept="video/*" hidden>
+        <span><strong>Drop a video here</strong> or click to choose</span>
+        <small id="uploadStatus"></small>
+      </label>
+    </section>
+    <h3 class="list-title">Videos</h3>
+    <ul class="job-list" id="jobList"></ul>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="empty" id="emptyState">
+      <div class="empty-phone"><div></div><div></div><div></div></div>
+      <h1>Turn long videos into shorts</h1>
+      <p>Paste a link or drop a file. ClipForge transcribes it, asks Claude for the strongest moments, and renders vertical clips with captions, ready for TikTok, YouTube Shorts and Reels.</p>
+    </div>
+    <div id="jobView" hidden></div>
+  </main>
+</div>
+
+<dialog id="settingsDlg">
+  <form method="dialog" id="settingsForm" class="settings">
+    <h2>Settings</h2>
+    <fieldset>
+      <legend>Claude picks the moments (defaults for new videos)</legend>
+      <label>Reels per video <input type="number" name="num_clips" min="1" max="30"></label>
+      <label>Min length (s) <input type="number" name="min_seconds" min="5" max="180"></label>
+      <label>Max length (s) <input type="number" name="max_seconds" min="10" max="180"></label>
+      <label>Claude model
+        <select name="claude_model">
+          <option value="">Claude Code default</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="haiku">Haiku (fastest)</option>
+        </select>
+      </label>
+      <div class="wide test-row"><button type="button" class="btn small" id="claudeTest">Test Claude</button><span class="test-result" id="claudeTestResult"></span></div>
+      <label class="wide">About your channel (Claude sees this on every video)
+        <textarea name="extra_instructions" rows="3" placeholder="e.g. My channel is about fitness for beginners. Write captions in Bosnian. (What to look for in a particular video goes in the box under New video.)"></textarea>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Transcription</legend>
+      <label>Speech model
+        <select name="whisper_model">
+          <option value="tiny">tiny (fastest, rough)</option>
+          <option value="base">base</option>
+          <option value="small">small (good default)</option>
+          <option value="medium">medium (better, slower)</option>
+          <option value="large-v3">large-v3 (best, slow on CPU)</option>
+          <option value="turbo">turbo (best with NVIDIA GPU)</option>
+        </select>
+      </label>
+      <label>Device
+        <select name="whisper_device">
+          <option value="auto">Auto</option>
+          <option value="cpu">CPU</option>
+          <option value="cuda">NVIDIA GPU (CUDA)</option>
+        </select>
+      </label>
+      <label>Language <input type="text" name="language" placeholder="auto (or en, bs, de…)"></label>
+      <label>Max download quality
+        <select name="max_download_height">
+          <option value="720">720p</option>
+          <option value="1080">1080p</option>
+          <option value="1440">1440p</option>
+          <option value="2160">4K</option>
+        </select>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Look of the reels</legend>
+      <label>Framing
+        <select name="crop_mode">
+          <option value="smart">Smart: face close-ups, whole frame for slides and wide shots</option>
+          <option value="track">Always follow the speaker's face</option>
+          <option value="center">Center crop</option>
+          <option value="fit">Whole frame + blurred background</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" name="captions"> Burn in captions</label>
+      <label class="check"><input type="checkbox" name="caption_uppercase"> UPPERCASE captions</label>
+      <label>Words per caption <input type="number" name="caption_words" min="1" max="8"></label>
+      <label>Font <input type="text" name="caption_font"></label>
+      <label>Font size <input type="number" name="caption_size" min="30" max="200"></label>
+      <label>Text color <input type="color" name="caption_color"></label>
+      <label>Highlight color <input type="color" name="caption_highlight"></label>
+      <label>Caption height <input type="range" name="caption_position" min="0.15" max="0.9" step="0.01"></label>
+      <label>Quality (CRF, lower = better) <input type="number" name="video_crf" min="14" max="30"></label>
+    </fieldset>
+    <p class="hint">Changes apply to new videos. To apply a new caption style to an existing video, use <em>Re-render all</em>.</p>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save" id="saveSettings">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="briefDlg">
+  <form method="dialog" class="add-clip">
+    <h2>New set of reels</h2>
+    <p class="hint">This replaces the draft reels of this video. Reels you've exported are kept. The video and its transcript are reused, so it only takes a minute or two.</p>
+    <div class="brief wide-brief" id="dlgBrief"></div>
+    <div class="dlg-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="go">Replace drafts</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="bigDlg">
+  <video id="bigPlayer" controls playsinline></video>
+  <button class="close" id="bigClose" title="Close (Esc)">✕</button>
+</dialog>
+
+<div class="toast" id="toast"></div>
+<script src="/static/workspace.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

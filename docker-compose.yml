@@ -1,0 +1,15 @@
+services:
+  clipforge:
+    build: .
+    image: clipforge:latest
+    container_name: clipforge
+    ports:
+      - "127.0.0.1:8765:8765"   # only reachable from this PC
+    env_file:
+      - path: .env               # CLAUDE_CODE_OAUTH_TOKEN=... (see .env.example)
+        required: false
+    volumes:
+      - ./data:/app/data         # jobs, transcripts, finished clips, settings
+      - ./models:/app/models     # speech models (downloaded once)
+      - ./videos:/videos         # put local video files here
+    restart: unless-stopped
