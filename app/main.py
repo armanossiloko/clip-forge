@@ -310,6 +310,32 @@ def edit_clip(job_id: str, clip_id: str, body: ClipEdit):
     return _public(job)
 
 
+@app.post("/api/jobs/{job_id}/clips/{clip_id}/write-text")
+def write_text(job_id: str, clip_id: str):
+    """Claude writes the post text (title, caption, hashtags) for one reel, e.g. one made by hand.
+    The on-screen hook is left alone, so a generated file stays up to date."""
+    job = _job(job_id)
+    clip = _clip(job, clip_id)
+    try:
+        transcript = pipeline.load_transcript(job_id)
+    except FileNotFoundError:
+        raise HTTPException(409, "This video has no transcript yet") from None
+    segs = [s for s in transcript["segments"] if s["end"] > clip["start"] and s["start"] < clip["end"]]
+    try:
+        data, model = claude_client.write_post_text(segs, job["settings"], job["source"].get("title", ""), job.get("brief"))
+    except Exception as exc:  # noqa: BLE001 - shown to the owner
+        raise HTTPException(502, f"Claude couldn't write it: {exc}") from None
+    fields = {k: str(data.get(k) or "").strip() for k in ("title", "caption")}
+    fields["title"] = fields["title"][:100] or clip.get("title", "")
+    fields["hashtags"] = pipeline.norm_tags(data.get("hashtags") or [])
+    with pipeline._lock:
+        clip.update(fields, text_by=claude_client.model_label(model))
+        pipeline.save(job)
+    if clip.get("file"):  # keep a generated reel's post text file in step
+        pipeline._write_post_text(Path(clip["file"]).with_suffix(".txt"), clip)
+    return _public(job)
+
+
 @app.post("/api/jobs/{job_id}/clips/{clip_id}/render")
 def render(job_id: str, clip_id: str):
     job = _job(job_id)

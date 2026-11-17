@@ -21,6 +21,7 @@ const ws = {
   plan: null, planKey: "", planTimer: 0, planFor: null,
   saveTimers: {}, usingProxy: false, small: null, needDraw: true,
   autoDownload: new Set(), zipWhenDone: false,  // reels to download as soon as they're generated
+  writing: new Set(),  // reels Claude is writing post text for
 
   // ------------------------------------------------------------ lifecycle
   mount(root, job) {
@@ -488,6 +489,12 @@ const ws = {
     ex.classList.toggle("primary", !generating);
     // while generating, the file on disk is still the previous version: don't offer it
     $("#wdWatch").hidden = !c.video_url || generating;
+    const writing = ws.writing.has(c.id), has = hasPostText(c);
+    const copy = $("#wdCopy");
+    copy.textContent = writing ? "✨ Writing…" : has ? "Copy post text" : "✨ Write post text";
+    copy.title = has ? "Copy the title, caption and hashtags" : "Let Claude write a title, caption and hashtags from what's said in this reel";
+    copy.disabled = writing;
+    $("#wdRewrite").hidden = !has || writing;
     $("#wdChanged").hidden = c.export_state !== "changed";
     $("#wdReset").hidden = !c.suggested;
     const i = this.clips().indexOf(c);
@@ -634,6 +641,20 @@ function exportLabel(c) {
   return c.status === "pending" ? "Waiting…" : `Generating… ${Math.round((c.progress || 0) * 100)}%`;
 }
 
+function hasPostText(c) { return !!((c.caption || "").trim() || (c.hashtags || []).length); }
+
+async function writePostText(c) {
+  const jobId = ws.jobId;
+  ws.writing.add(c.id);
+  ws.fillDetail(false);
+  try {
+    applyJob(await api(`/api/jobs/${jobId}/clips/${c.id}/write-text`, { method: "POST" }));
+    if (ws.selected === c.id) ws.fillDetail(true);  // show the new text in the fields
+    toast(`Post text written for reel #${c.index}. Edit it if you like, then Copy post text.`);
+  } catch (e) { toast(e.message, true); }
+  finally { ws.writing.delete(c.id); ws.fillDetail(false); }
+}
+
 // the link changes with every new version of the file, so a browser can never hand back an older one
 function clipDownloadUrl(jobId, c) { return `/api/jobs/${jobId}/clips/${c.id}/download?v=${Math.round(c.rendered_at || 0)}`; }
 
@@ -737,7 +758,8 @@ const WS_HTML = `
         <div class="wd-actions">
           <button class="btn primary" id="wdExport"></button>
           <button class="btn small" id="wdWatch" hidden title="Watch the generated file">▶ Watch file</button>
-          <button class="btn small" id="wdCopy">Copy post text</button>
+          <button class="btn small" id="wdCopy"></button>
+          <button class="btn small ghost" id="wdRewrite" title="Let Claude write a new title, caption and hashtags" hidden>✨ Rewrite</button>
           <button class="btn small ghost" id="wdReset" title="Back to the times and text Claude suggested">Reset</button>
           <button class="btn small ghost danger" id="wdDelete">Delete</button>
         </div>
@@ -923,11 +945,14 @@ function wireWorkspace() {
     } catch (e) { ws.autoDownload.delete(c.id); toast(e.message, true); }
   };
   $("#wdWatch").onclick = () => { const c = ws.clip(); if (c?.video_url) openBig(c.video_url, c.thumb_url || ""); };
+  // no post text yet (e.g. a reel made by hand): Claude writes it; otherwise copy it
   $("#wdCopy").onclick = async () => {
     const c = ws.clip(); if (!c) return;
+    if (!hasPostText(c)) return writePostText(c);
     try { await navigator.clipboard.writeText(`${c.title}\n\n${c.caption}\n\n${(c.hashtags || []).join(" ")}`); toast("Post text copied"); }
     catch { toast("Could not access the clipboard", true); }
   };
+  $("#wdRewrite").onclick = () => { const c = ws.clip(); if (c) writePostText(c); };
   $("#wdReset").onclick = () => {
     const c = ws.clip(); if (!c?.suggested) return;
     if (!confirm("Go back to the times and text that were first suggested for this reel?")) return;

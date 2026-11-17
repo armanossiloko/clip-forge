@@ -281,6 +281,29 @@ def find_clips(segments: list[dict], settings: dict, title: str = "",
     return data["clips"], model
 
 
+POST_TEXT_PROMPT = """You write the post text for a short vertical video (TikTok / YouTube Shorts / Reels) cut from a longer video{title_part}.
+Below is what's said in the clip (`[start-end] text`, times in seconds).
+{extra}
+Respond with ONLY a JSON object, no markdown fences, no commentary, in exactly this shape:
+{{"title": "Short punchy title, max 60 characters",
+  "caption": "Post caption, 1-2 sentences, written to drive comments",
+  "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4"]}}
+If nothing is said in the clip, base it on the video's title.
+
+CLIP:
+{transcript}
+"""
+
+
+def write_post_text(segments: list[dict], settings: dict, title: str = "",
+                    brief: dict | None = None) -> tuple[dict, str | None]:
+    """Title, caption and hashtags for one reel (e.g. one made by hand). Returns (dict, model id)."""
+    prompt = POST_TEXT_PROMPT.format(title_part=f' titled "{title}"' if title else "", extra=_extra(settings, brief),
+                                     transcript=format_transcript(segments) or "(no speech in this clip)")
+    data, model = _ask_json(prompt, settings, "post text", lambda d: bool(d.get("caption") or d.get("title")))
+    return data, model
+
+
 def describe_cuts(parts: list[list[dict]], settings: dict, title: str = "",
                   brief: dict | None = None) -> tuple[list[dict], str | None]:
     """Post text for consecutive parts. `parts` holds each part's transcript segments.
