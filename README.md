@@ -66,6 +66,10 @@ Double-click `setup.bat` once. It installs Python, ffmpeg, Deno and Claude Code 
   - **Framing**: *Whole frame* (the default: the full video, never zoomed in, on a blurred copy of itself). If you want close-ups,
     pick *Zoom in on faces when found* (it decides per shot; face detection can be fooled by games and dark scenes),
     *Always zoom in and follow the face* or *Always zoom in on the middle*, in Settings or for one reel.
+  - **Look** (the tab next to *Details*): how this reel will look, shown live in the phone preview before anything is made.
+    Zoom the picture (whole frame ↔ fill the screen), drag it in the preview to move it (scroll on it to zoom), blurred or black
+    background, captions on/off, size, height (or drag them in the preview), words at a time, UPPERCASE, colours, and the hook
+    on/off. *Use this look for all reels* copies it to the other reels of the video; *Reset look* goes back to Settings.
   - **Generate** makes the 1080×1920 video file and downloads it to your computer as soon as it's ready (it shows
     *Generating… 45%* meanwhile). Each reel shows *Draft*, *Generated* or *Changed since generated*; a generated reel's button
     becomes **Download again**, and an edited one **Generate again**. **Generate all** (top) does every reel that needs it and

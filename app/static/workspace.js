@@ -11,6 +11,18 @@ const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // libass sizes a font by its whole line height (OS/2 winAscent + winDescent): for Poppins Bold 1000 / (1135 + 627).
 // So an ASS font size of 92 is a CSS font-size of 92 × 0.568. (The hook banner is 72 % of the caption size.)
 const ASS_EM = 0.568;
+// A reel's own look: picture zoom/position and background (here), captions (from Settings unless tweaked).
+// Same defaults as pipeline.LOOK_DEFAULTS; the file is made with the same numbers the preview draws.
+const LOOK_DEFAULTS = { zoom: 0, pos_x: 0.5, pos_y: 0.5, background: "blur" };
+const CAPTION_FALLBACK = { captions: true, caption_size: 92, caption_position: 0.7, caption_words: 3, caption_uppercase: true,
+  caption_color: "#FFFFFF", caption_highlight: "#FFD400" };
+// where the whole-frame picture sits in the 1080×1920 reel (pipeline.fit_rect does the same for the export)
+function fitRect(sw, sh, look) {
+  const W = 1080, H = 1920, z = +look.zoom || 0;
+  const sFit = Math.min(W / sw, H / sh), sFill = Math.max(W / sw, H / sh), sc = sFit + z * (sFill - sFit);
+  const w = sw * sc, h = sh * sc;
+  return { w, h, x: (W - w) * (look.pos_x ?? 0.5), y: (H - h) * (look.pos_y ?? 0.5) };
+}
 
 const ws = {
   root: null, jobId: null, job: null, selected: null,
@@ -22,6 +34,8 @@ const ws = {
   saveTimers: {}, usingProxy: false, small: null, needDraw: true,
   autoDownload: new Set(), zipWhenDone: false,  // reels to download as soon as they're generated
   writing: new Set(),  // reels Claude is writing post text for
+  lookPending: {}, lookTimer: 0, phoneDrag: null,  // look tweaks not saved yet (the preview shows them already)
+  tab: (() => { try { return localStorage.getItem("cf.tab") || "details"; } catch { return "details"; } })(),
 
   // ------------------------------------------------------------ lifecycle
   mount(root, job) {
@@ -58,6 +72,7 @@ const ws = {
     clearTimeout(this.planTimer);
     Object.values(this.saveTimers).forEach(clearTimeout);
     this.saveTimers = {};
+    if (this.jobId && this.lookPending[this.selected]) { clearTimeout(this.lookTimer); this.flushLook(this.selected); }
     const v = this.root && $("#wsVideo", this.root);
     if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
     this.root = null; this.jobId = null; this.started = false;
@@ -136,6 +151,7 @@ const ws = {
 
   select(id, seek = true) {
     if (this.selected === id) return;
+    if (this.lookPending[this.selected]) { clearTimeout(this.lookTimer); this.flushLook(this.selected); }
     this.selected = id;
     this.local = null;
     this.plan = null; this.planKey = "";
@@ -454,6 +470,71 @@ const ws = {
     }
   },
 
+  // ------------------------------------------------------------ the reel's look (live; saved shortly after)
+  look(c = this.clip()) {
+    const out = { ...CAPTION_FALLBACK, ...this.settings, ...LOOK_DEFAULTS, ...(c?.look || {}) };
+    for (const [k, v] of Object.entries((c && this.lookPending[c.id]) || {})) {
+      out[k] = v !== null ? v : k in LOOK_DEFAULTS ? LOOK_DEFAULTS[k] : this.settings[k] ?? CAPTION_FALLBACK[k];
+    }
+    return out;
+  },
+  setLook(fields) {
+    const c = this.clip(); if (!c) return;
+    const id = c.id;
+    this.lookPending[id] = { ...(this.lookPending[id] || {}), ...fields };
+    this.needDraw = true; this.capStyleKey = ""; this.chunksKey = "";
+    this.fillLook();
+    clearTimeout(this.lookTimer);
+    this.lookTimer = setTimeout(() => this.flushLook(id), 400);
+  },
+  async flushLook(id) {
+    const sent = this.lookPending[id];
+    if (!sent || !Object.keys(sent).length) return;
+    const jobId = this.jobId;
+    try {
+      const j = await api(`/api/jobs/${jobId}/clips/${id}`, { method: "PATCH", json: { look: sent } });
+      const p = this.lookPending[id];
+      if (p) { for (const k of Object.keys(sent)) if (p[k] === sent[k]) delete p[k]; if (!Object.keys(p).length) delete this.lookPending[id]; }
+      applyJob(j);
+      this.flash("Saved");
+    } catch (e) {
+      delete this.lookPending[id];
+      toast(e.message, true);
+    }
+    this.needDraw = true; this.capStyleKey = "";
+    this.fillLook();
+  },
+  showTab(name) {
+    this.tab = name;
+    try { localStorage.setItem("cf.tab", name); } catch {}
+    this.root.querySelectorAll("#wdTabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+    this.root.querySelectorAll(".wd-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  },
+  fillLook() {
+    const c = this.clip(); if (!c || !$("#lkZoom")) return;
+    const L = this.look(c);
+    const set = (id, v) => {
+      const el = $("#" + id);
+      if (el.type === "checkbox") el.checked = !!v;
+      else if (String(el.value).toLowerCase() !== String(v).toLowerCase()) el.value = v;
+    };
+    const z = +L.zoom || 0;
+    set("lkZoom", z);
+    $("#lkZoomV").textContent = z <= 0.001 ? "whole frame" : z >= 0.999 ? "fills the screen" : `${Math.round(z * 100)} %`;
+    this.root.querySelectorAll("#lkBg [data-bg]").forEach((b) => b.classList.toggle("on", b.dataset.bg === L.background));
+    set("lkCaps", L.captions !== false);
+    this.root.querySelector(".lk-caps").classList.toggle("off", L.captions === false);
+    set("lkSize", L.caption_size); $("#lkSizeV").textContent = L.caption_size;
+    set("lkPos", L.caption_position); $("#lkPosV").textContent = `${Math.round(L.caption_position * 100)} % down`;
+    set("lkWords", L.caption_words); $("#lkWordsV").textContent = L.caption_words;
+    set("lkUpper", L.caption_uppercase !== false);
+    set("lkColor", (L.caption_color || "#ffffff").toLowerCase());
+    set("lkHl", (L.caption_highlight || "#ffd400").toLowerCase());
+    set("lkHook", c.show_hook !== false);
+    const mode = c.crop_mode || this.settings.crop_mode || "fit";
+    $("#lkAutoNote").hidden = mode === "fit";
+  },
+
   // ------------------------------------------------------------ details panel of the selected reel
   fillDetail(force) {
     const box = $("#wsDetail"); if (!box) return;
@@ -497,6 +578,7 @@ const ws = {
     $("#wdRewrite").hidden = !has || writing;
     $("#wdChanged").hidden = c.export_state !== "changed";
     $("#wdReset").hidden = !c.suggested;
+    this.fillLook();
     const i = this.clips().indexOf(c);
     $("#wdPrev").disabled = i <= 0;
     $("#wdNext").disabled = i >= this.clips().length - 1;
@@ -530,10 +612,11 @@ const ws = {
 
   buildChunks(c) {
     const [s, e] = this.range(c);
-    const key = `${c.id}|${s}|${e}|${this.settings.caption_words}`;
+    const nWords = Math.max(1, +(this.look(c).caption_words || 3));
+    const key = `${c.id}|${s}|${e}|${nWords}`;
     if (key === this.chunksKey) return;
     this.chunksKey = key;
-    const maxW = Math.max(1, +(this.settings.caption_words || 3));
+    const maxW = nWords;
     const words = this.words.filter((w) => w.end > s && w.start < e);
     const chunks = [];
     let cur = [];
@@ -573,17 +656,20 @@ const ws = {
       const sx = vw / plan.src_w, sy = vh / plan.src_h;
       ctx.drawImage(v, cropX * sx, 0, plan.crop_w * sx, plan.crop_h * sy, 0, 0, W, H);
     } else {
-      // blurred background: draw tiny, then stretch (cheap blur), slightly darker; whole frame on top
-      const sc = this.small, sctx = sc.getContext("2d"), k = Math.max(sc.width / vw, sc.height / vh);
-      sctx.drawImage(v, (sc.width - vw * k) / 2, (sc.height - vh * k) / 2, vw * k, vh * k);
+      const L = c ? this.look(c) : LOOK_DEFAULTS;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(sc, 0, 0, W, H);
-      ctx.fillStyle = "rgba(0,0,0,0.08)";
-      ctx.fillRect(0, 0, W, H);
-      const fh = W * vh / vw;
-      if (fh <= H) ctx.drawImage(v, 0, (H - fh) / 2, W, fh);
-      else { const fw = H * vw / vh; ctx.drawImage(v, (W - fw) / 2, 0, fw, H); }
+      if (L.background === "black") { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+      else {  // blurred background: draw tiny, then stretch (cheap blur), slightly darker
+        const sc = this.small, sctx = sc.getContext("2d"), k = Math.max(sc.width / vw, sc.height / vh);
+        sctx.drawImage(v, (sc.width - vw * k) / 2, (sc.height - vh * k) / 2, vw * k, vh * k);
+        ctx.drawImage(sc, 0, 0, W, H);
+        ctx.fillStyle = "rgba(0,0,0,0.08)";
+        ctx.fillRect(0, 0, W, H);
+      }
+      // the picture, zoomed and moved as the look says (the canvas clips whatever falls outside)
+      const g = fitRect(vw, vh, L), k = W / 1080;
+      ctx.drawImage(v, g.x * k, g.y * k, g.w * k, g.h * k);
     }
     this.drawCaptions(t, c, inside);
   },
@@ -591,7 +677,7 @@ const ws = {
   drawCaptions(t, c, inside) {
     const frame = $("#wsPhone"), cap = $("#pvCap"), hook = $("#pvHook"), out = $("#pvOutside");
     const H = this.phoneH || frame.clientHeight || 1, k = H / 1920;
-    const st = this.settings, size = +(st.caption_size || 92);
+    const st = this.look(c), size = +(st.caption_size || 92);
     const upper = st.caption_uppercase !== false, hl = st.caption_highlight || "#FFD400";
     const show = (el, on) => { if (el.hidden === on) el.hidden = !on; };  // only touch the page on a change
     show(out, !!c && !inside);
@@ -627,7 +713,7 @@ const ws = {
     }
     show(cap, !!ch);
     const hookText = (c.id === this.selected ? $("#wdHook").value : c.hook) || "";
-    const showHook = !!hookText && t < s + 3;
+    const showHook = c.show_hook !== false && !!hookText && t < s + 3;
     show(hook, showHook);
     if (showHook) {
       const txt = upper ? hookText.toUpperCase() : hookText;
@@ -726,7 +812,7 @@ const WS_HTML = `
     </div>
     <div class="ws-phone-col">
       <div class="ws-phone" id="wsPhone">
-        <canvas id="wsCanvas" width="540" height="960"></canvas>
+        <canvas id="wsCanvas" width="540" height="960" title="Drag to move the picture, scroll to zoom"></canvas>
         <div class="pv-hook" id="pvHook" hidden></div>
         <div class="pv-cap" id="pvCap" hidden></div>
         <div class="pv-out" id="pvOutside" hidden></div>
@@ -740,6 +826,8 @@ const WS_HTML = `
         <div class="wd-head"><b id="wdNum"></b><span id="wdState"></span><span class="wd-saved" id="wsSaved"></span>
           <span class="wd-nav"><button class="btn small" id="wdPrev" title="Previous reel">‹</button><button class="btn small" id="wdNext" title="Next reel">›</button></span></div>
         <input type="text" id="wdTitle" data-field="title" class="title" placeholder="Title">
+        <div class="wd-tabs" id="wdTabs"><button data-tab="details">Details</button><button data-tab="look">🎨 Look</button></div>
+        <div class="wd-pane" data-pane="details">
         <div class="wd-times">
           <label>Start<span class="time"><button class="btn" data-nudge="start:-0.5">−</button><input type="text" id="wdStart"><button class="btn" data-nudge="start:0.5">+</button></span></label>
           <label>End<span class="time"><button class="btn" data-nudge="end:-0.5">−</button><input type="text" id="wdEnd"><button class="btn" data-nudge="end:0.5">+</button></span></label>
@@ -748,12 +836,44 @@ const WS_HTML = `
         <label>Hook (on screen for 3 s)<input type="text" id="wdHook" data-field="hook" placeholder="No hook"></label>
         <label>Caption<textarea id="wdCaption" data-field="caption" rows="3"></textarea></label>
         <label>Hashtags<input type="text" id="wdTags" data-field="hashtags"></label>
-        <label>Framing<select id="wdCrop" data-field="crop_mode">
-          <option value="">Default (from Settings)</option><option value="fit">Whole frame, never zoomed in</option>
-          <option value="smart">Zoom in on faces when found</option><option value="track">Always zoom in, follow the face</option>
-          <option value="center">Always zoom in on the middle</option></select></label>
         <div class="reason" id="wdReason"></div>
         <div class="made-by" id="wdMade"></div>
+        </div>
+        <div class="wd-pane lk" data-pane="look">
+          <p class="hint">Changes show in the preview right away. Nothing is processed until you press Generate.</p>
+          <div class="lk-sec"><h4>Picture</h4>
+            <label class="lk-line">Zoom <span class="lk-val" id="lkZoomV"></span></label>
+            <input type="range" id="lkZoom" min="0" max="1" step="0.01">
+            <div class="lk-row"><button class="btn small" data-zoom="0">Whole frame</button><button class="btn small" data-zoom="1">Fill the screen</button><button class="btn small ghost" id="lkCenter">Center it</button></div>
+            <p class="hint">Drag the picture in the preview to move it; scroll on it to zoom.</p>
+            <div class="lk-line">Background
+              <span class="seg" id="lkBg"><button type="button" data-bg="blur">Blurred</button><button type="button" data-bg="black">Black</button></span></div>
+            <label>Automatic framing<select id="wdCrop" data-field="crop_mode">
+              <option value="">Default (from Settings)</option><option value="fit">Off: use my zoom and position</option>
+              <option value="smart">Zoom in on faces when found</option><option value="track">Always zoom in, follow the face</option>
+              <option value="center">Always zoom in on the middle</option></select></label>
+            <p class="hint" id="lkAutoNote" hidden>Automatic framing decides the close-up shots; your zoom and position apply to the rest.</p>
+          </div>
+          <div class="lk-sec"><h4>Captions <label class="check"><input type="checkbox" id="lkCaps"> Show</label></h4>
+            <div class="lk-caps">
+              <label class="lk-line">Size <span class="lk-val" id="lkSizeV"></span></label>
+              <input type="range" id="lkSize" min="40" max="160" step="2">
+              <label class="lk-line">Height <span class="lk-val" id="lkPosV"></span></label>
+              <input type="range" id="lkPos" min="0.08" max="0.95" step="0.01">
+              <p class="hint">Or drag the captions up and down in the preview.</p>
+              <label class="lk-line">Words at a time <span class="lk-val" id="lkWordsV"></span></label>
+              <input type="range" id="lkWords" min="1" max="6" step="1">
+              <div class="lk-row">
+                <label class="check"><input type="checkbox" id="lkUpper"> UPPERCASE</label>
+                <label class="lk-color">Text <input type="color" id="lkColor"></label>
+                <label class="lk-color">Highlight <input type="color" id="lkHl"></label>
+              </div>
+            </div>
+          </div>
+          <div class="lk-sec"><h4>Hook <label class="check"><input type="checkbox" id="lkHook"> Show for the first 3 s</label></h4></div>
+          <div class="lk-row"><button class="btn small" id="lkAll" title="Give every reel of this video this look">Use this look for all reels</button>
+            <button class="btn small ghost" id="lkReset" title="Back to the look from Settings">Reset look</button></div>
+        </div>
         <div class="clip-err" id="wdErr"></div>
         <div class="wd-note" id="wdChanged" hidden>You changed this reel after generating it. Generate again to get a file with your changes.</div>
         <div class="wd-actions">
@@ -922,6 +1042,84 @@ function wireWorkspace() {
     const el = $("#" + id);
     el.addEventListener("input", () => ws.saveSoon(el.dataset.field, el.value));
   });
+  // tabs: Details | Look
+  ws.root.querySelectorAll("#wdTabs [data-tab]").forEach((b) => (b.onclick = () => ws.showTab(b.dataset.tab)));
+  ws.showTab(ws.tab);
+  // Look: every change is drawn at once and saved shortly after; nothing is rendered
+  const range = (id, key) => $("#" + id).addEventListener("input", (e) => ws.setLook({ [key]: Number(e.target.value) }));
+  range("lkZoom", "zoom");
+  range("lkSize", "caption_size");
+  range("lkPos", "caption_position");
+  range("lkWords", "caption_words");
+  ws.root.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => ws.setLook({ zoom: +b.dataset.zoom })));
+  $("#lkCenter").onclick = () => ws.setLook({ pos_x: 0.5, pos_y: 0.5 });
+  ws.root.querySelectorAll("#lkBg [data-bg]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); ws.setLook({ background: b.dataset.bg }); }));
+  $("#lkCaps").onchange = (e) => ws.setLook({ captions: e.target.checked });
+  $("#lkUpper").onchange = (e) => ws.setLook({ caption_uppercase: e.target.checked });
+  $("#lkColor").addEventListener("input", (e) => ws.setLook({ caption_color: e.target.value.toUpperCase() }));
+  $("#lkHl").addEventListener("input", (e) => ws.setLook({ caption_highlight: e.target.value.toUpperCase() }));
+  $("#lkHook").onchange = (e) => {
+    const c = ws.clip(); if (!c) return;
+    c.show_hook = e.target.checked;  // show it in the preview now; saved right away
+    ws.needDraw = true;
+    ws.save(c.id, { show_hook: e.target.checked });
+  };
+  $("#lkAll").onclick = async () => {
+    const c = ws.clip(); if (!c) return;
+    const L = { ...(c.look || {}) };
+    for (const [k, val] of Object.entries(ws.lookPending[c.id] || {})) { if (val === null) delete L[k]; else L[k] = val; }
+    const differ = ws.clips().filter((x) => x.id !== c.id && Object.keys(x.look || {}).length && JSON.stringify(x.look) !== JSON.stringify(L));
+    if (differ.length && !confirm(`${differ.length} other reel${differ.length === 1 ? " has its" : "s have their"} own look. Replace it with this one?`)) return;
+    clearTimeout(ws.lookTimer);
+    delete ws.lookPending[c.id];
+    try {
+      applyJob(await api(`/api/jobs/${ws.jobId}/look-all`, { json: { look: L, show_hook: c.show_hook !== false } }));
+      toast(`All ${ws.clips().length} reels now use this look.`);
+    } catch (e) { toast(e.message, true); }
+  };
+  $("#lkReset").onclick = () => {
+    const c = ws.clip(); if (!c) return;
+    const nulls = {};
+    for (const k of new Set([...Object.keys(c.look || {}), ...Object.keys(ws.lookPending[c.id] || {})])) nulls[k] = null;
+    if (c.show_hook === false) ws.save(c.id, { show_hook: true });
+    c.show_hook = true;
+    if (Object.keys(nulls).length) ws.setLook(nulls); else ws.fillLook();
+  };
+  // the phone preview: drag the picture to move it, drag the captions up/down, scroll to zoom
+  const phone = $("#wsPhone");
+  phone.addEventListener("pointerdown", (e) => {
+    const c = ws.clip();
+    if (!c || e.button !== 0 || !v.videoWidth) return;
+    const L = ws.look(c), k = phone.clientHeight / 1920;
+    if (e.target.closest("#pvCap")) ws.phoneDrag = { kind: "cap", y0: e.clientY, p0: +L.caption_position, H: phone.clientHeight };
+    else {
+      const g = fitRect(v.videoWidth, v.videoHeight, L);
+      ws.phoneDrag = { kind: "pic", x0: e.clientX, y0: e.clientY, X: g.x, Y: g.y, w: g.w, h: g.h, k };
+    }
+    phone.setPointerCapture(e.pointerId);
+    phone.classList.add("dragging");
+    e.preventDefault();
+  });
+  phone.addEventListener("pointermove", (e) => {
+    const d = ws.phoneDrag; if (!d) return;
+    if (d.kind === "cap") {
+      ws.setLook({ caption_position: Math.round(clampN(d.p0 + (e.clientY - d.y0) / d.H, 0.08, 0.95) * 100) / 100 });
+      return;
+    }
+    const nx = d.X + (e.clientX - d.x0) / d.k, ny = d.Y + (e.clientY - d.y0) / d.k;
+    const px = Math.abs(1080 - d.w) > 0.5 ? clampN(nx / (1080 - d.w), 0, 1) : 0.5;
+    const py = Math.abs(1920 - d.h) > 0.5 ? clampN(ny / (1920 - d.h), 0, 1) : 0.5;
+    ws.setLook({ pos_x: Math.round(px * 1000) / 1000, pos_y: Math.round(py * 1000) / 1000 });
+  });
+  const phoneUp = () => { ws.phoneDrag = null; phone.classList.remove("dragging"); };
+  phone.addEventListener("pointerup", phoneUp);
+  phone.addEventListener("pointercancel", phoneUp);
+  phone.addEventListener("wheel", (e) => {
+    const c = ws.clip(); if (!c) return;
+    e.preventDefault();
+    ws.setLook({ zoom: Math.round(clampN((+ws.look(c).zoom || 0) - e.deltaY * 0.0012, 0, 1) * 100) / 100 });
+  }, { passive: false });
+
   $("#wdCrop").addEventListener("change", (e) => ws.save(ws.selected, { crop_mode: e.target.value || "default" }));
   ["wdStart", "wdEnd"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
     const t = parseTime(e.target.value);
