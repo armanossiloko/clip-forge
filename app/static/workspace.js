@@ -48,6 +48,10 @@ const ws = {
     this.mark = null; this.markShown = false; this.mkKey = "";
     this.film = null;
     this.plan = null; this.planKey = "";
+    // The page is built fresh below, so forget every "already drawn" key from the previous video; otherwise
+    // e.g. the new captions never get their size and height and sit at the very bottom (seen after switching videos).
+    this.capStyleKey = ""; this.viewKey = ""; this.phKey = ""; this.playLabel = ""; this.chunksKey = "";
+    this.tlW = 0; this.ovW = 0; this.phoneH = 0;
     this.dur = job.video?.duration || 0;
     root.innerHTML = WS_HTML;
     this.small = document.createElement("canvas");
