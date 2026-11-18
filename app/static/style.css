@@ -161,7 +161,9 @@ textarea { resize: vertical; }
 .pv-cap .w { display: inline-block; font-weight: 700; }
 .pv-cap .w + .w { margin-left: .42em; }  /* = the export's gap: a space stretched to 160 % */
 .pv-cap .w.on { font-size: 1.12em; line-height: 1; }
-.pv-hook { position: absolute; left: 50%; transform: translateX(-50%); max-width: 84%; text-align: center; color: #000; font-family: "CF Caption", "Poppins", sans-serif;
+/* width: max-content, or the left: 50% box may only use half the phone and wraps early. 86.7 % = the export's
+   900 px between its margins + the 18 px box on each side, of 1080 */
+.pv-hook { position: absolute; left: 50%; transform: translateX(-50%); width: max-content; max-width: 86.7%; text-align: center; color: #000; font-family: "CF Caption", "Poppins", sans-serif;
   font-weight: 700; line-height: 1.2; pointer-events: none; }
 .pv-out { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px;
   background: #000a; color: #fffc; font-size: 13px; pointer-events: none; }
