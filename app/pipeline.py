@@ -600,6 +600,7 @@ def new_clip(data: dict, start: float, end: float, made_by: dict | None = None) 
         "edited": False,       # True once you change its times or text
         "crop_mode": None,     # None = use the Settings default
         "show_hook": True,
+        "look": {},            # this reel's own look (picture zoom/position, background, captions); empty = Settings
         "status": "draft",     # draft → pending → rendering → ready (exported) | error
         "file": None,
         "thumb": None,
@@ -615,8 +616,72 @@ def new_clip(data: dict, start: float, end: float, made_by: dict | None = None) 
 
 def export_key(clip: dict) -> dict:
     """The parts of a clip that change the video file (title/caption/hashtags only change the post text)."""
-    return {"start": round(float(clip["start"]), 2), "end": round(float(clip["end"]), 2),
-            "hook": (clip.get("hook") or "") if clip.get("show_hook", True) else "", "crop_mode": clip.get("crop_mode")}
+    key = {"start": round(float(clip["start"]), 2), "end": round(float(clip["end"]), 2),
+           "hook": (clip.get("hook") or "") if clip.get("show_hook", True) else "", "crop_mode": clip.get("crop_mode")}
+    if clip.get("look"):  # only when set, so files exported before looks existed don't all turn "changed"
+        key["look"] = dict(sorted(clip["look"].items()))
+    return key
+
+
+# ----------------------------------------------------------------------------- a reel's own look
+
+# Tweaked per reel in the editor, live in the preview; anything not set comes from Settings.
+LOOK_DEFAULTS = {"zoom": 0.0, "pos_x": 0.5, "pos_y": 0.5, "background": "blur"}
+_LOOK_NUM = {"zoom": (0.0, 1.0), "pos_x": (0.0, 1.0), "pos_y": (0.0, 1.0), "caption_size": (30, 200),
+             "caption_position": (0.08, 0.95), "caption_words": (1, 8)}
+_LOOK_BOOL = ("captions", "caption_uppercase")
+_LOOK_COLOR = ("caption_color", "caption_highlight")
+
+
+def normalize_look(data: dict) -> dict:
+    """Keep only known look keys with sane values. A None value means "back to the default" (dropped)."""
+    out = {}
+    for k, v in (data or {}).items():
+        if v is None:
+            continue
+        if k in _LOOK_NUM:
+            try:
+                lo, hi = _LOOK_NUM[k]
+                n = min(hi, max(lo, float(v)))
+                out[k] = int(round(n)) if k in ("caption_size", "caption_words") else round(n, 4)
+            except (TypeError, ValueError):
+                pass
+        elif k in _LOOK_BOOL:
+            out[k] = bool(v)
+        elif k in _LOOK_COLOR and isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+            out[k] = v.upper()
+        elif k == "background" and v in ("blur", "black"):
+            out[k] = v
+    return out
+
+
+def effective_look(settings: dict, clip: dict) -> dict:
+    """Settings + the look defaults + this reel's own tweaks: what the file (and the preview) uses."""
+    return {**settings, **LOOK_DEFAULTS, **(clip.get("look") or {})}
+
+
+def _even(n: float) -> int:
+    return max(2, int(round(n / 2)) * 2)
+
+
+def fit_rect(src_w: int, src_h: int, look: dict) -> dict:
+    """Where the whole-frame picture goes in the 1080×1920 reel, and which part of the source shows.
+    zoom 0 = the whole frame fits, 1 = it fills the screen; pos_x/pos_y = 0..1 (0.5 = centered).
+    The editor's preview uses the same math (fitRect in workspace.js)."""
+    W, H = 1080, 1920
+    z = float(look.get("zoom", 0))
+    s_fit, s_fill = min(W / src_w, H / src_h), max(W / src_w, H / src_h)
+    s = s_fit + z * (s_fill - s_fit)
+    w, h = src_w * s, src_h * s
+    x, y = (W - w) * float(look.get("pos_x", 0.5)), (H - h) * float(look.get("pos_y", 0.5))
+    dx, dy = int(round(max(0.0, x))), int(round(max(0.0, y)))
+    dw = min(_even(min(W, x + w) - max(0.0, x)), (W - dx) // 2 * 2)
+    dh = min(_even(min(H, y + h) - max(0.0, y)), (H - dy) // 2 * 2)
+    sx, sy = (dx - x) / s, (dy - y) / s
+    sw, sh = min(src_w - sx, dw / s), min(src_h - sy, dh / s)
+    return {"dx": dx, "dy": dy, "dw": dw, "dh": dh,
+            "sx": max(0, int(round(sx))), "sy": max(0, int(round(sy))),
+            "sw": max(2, int(round(sw))), "sh": max(2, int(round(sh)))}
 
 
 def export_state(clip: dict) -> str:
@@ -668,9 +733,14 @@ def render_clip(job: dict, clip: dict) -> None:
 
 
 # whole frame, centered on a blurred, zoomed copy of itself (inputs [a] and [b] = the same video)
-FIT_GRAPH = ("[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=28:2,eq=brightness=-0.06[bg];"
-             "[b]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
-             "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1")
+def fit_graph(src_w: int, src_h: int, look: dict) -> str:
+    """The whole-frame layout: the picture (zoomed/moved as the reel's look says) over a blurred or black background."""
+    r = fit_rect(src_w, src_h, look)
+    bg = ("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill" if look.get("background") == "black"
+          else "boxblur=28:2,eq=brightness=-0.06")
+    return (f"[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,{bg}[bg];"
+            f"[b]crop={r['sw']}:{r['sh']}:{r['sx']}:{r['sy']},scale={r['dw']}:{r['dh']}:flags=lanczos[fg];"
+            f"[bg][fg]overlay={r['dx']}:{r['dy']},setsar=1")
 
 
 def _encode(job: dict, clip: dict, d: Path, name: str, progress=None) -> tuple[str | None, str | None]:
@@ -685,9 +755,10 @@ def _encode(job: dict, clip: dict, d: Path, name: str, progress=None) -> tuple[s
         dur = end - start
         words = all_words(load_transcript(job["id"]))
         hook = (clip.get("hook") or "") if clip.get("show_hook", True) else ""
-        captions.build_ass(words, start, end, settings, hook=hook, out_path=ass)
+        look = effective_look(settings, clip)
+        captions.build_ass(words, start, end, look, hook=hook, out_path=ass)
 
-        mode = clip.get("crop_mode") or settings.get("crop_mode", "smart")
+        mode = clip.get("crop_mode") or settings.get("crop_mode", "fit")
         plan = framing_plan(job, start, end, mode)  # the same plan the editor's live preview shows
         shots = plan["shots"]
         close = [s for s in shots if s["layout"] == "crop"]
@@ -695,13 +766,14 @@ def _encode(job: dict, clip: dict, d: Path, name: str, progress=None) -> tuple[s
                        if mode == "smart" and len(shots) > 0 else None)
         closeup = (f"crop=w={plan['crop_w']}:h={plan['crop_h']}:x='{crop.keys_to_expr(plan['keys'])}':y=0,"
                    "scale=1080:1920:flags=lanczos,setsar=1") if close else ""
+        fit = fit_graph(plan["src_w"], plan["src_h"], look)
         if not close:
-            vf = "[0:v]split[a][b];" + FIT_GRAPH
+            vf = "[0:v]split[a][b];" + fit
         elif len(close) == len(shots):
             vf = f"[0:v]{closeup}"
         else:  # render both layouts and show the close-up only during its shots
             enable = "+".join(f"between(t,{s['t0']:.3f},{s['t1'] - 0.002:.3f})" for s in close)
-            vf = ("[0:v]split=3[a][b][c];" + FIT_GRAPH + "[wide];"
+            vf = ("[0:v]split=3[a][b][c];" + fit + "[wide];"
                   f"[c]{closeup}[close];[wide][close]overlay=0:0:enable='{enable}'")
 
         use_subs = ass.read_text(encoding="utf-8").count("Dialogue:") > 0
@@ -762,7 +834,7 @@ def framing_plan(job: dict, start: float, end: float, mode: str | None = None, p
     For the editor's preview while the scan is still running, a provisional whole-frame plan: working the framing
     out separately would decode the same video a second time and slow everything down."""
     v = job["video"]
-    mode = mode if mode in ("smart", "track", "center", "fit") else load_settings().get("crop_mode", "smart")
+    mode = mode if mode in ("smart", "track", "center", "fit") else load_settings().get("crop_mode", "fit")
     an = load_analysis(job)
     scanning = (job.get("prep") or {}).get("status") in ("queued", "running")
     if preview and not an and scanning and mode in ("smart", "track"):

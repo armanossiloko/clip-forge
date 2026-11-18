@@ -32,7 +32,7 @@ DEFAULT_SETTINGS: dict = {
     "claude_timeout": 600,
     "extra_instructions": "",        # e.g. "My channel is about personal finance, prefer actionable tips"
     # --- rendering ---
-    "crop_mode": "smart",            # smart (per shot: face close-up or whole frame) | track | center | fit
+    "crop_mode": "fit",              # fit (whole frame, never zoomed; the default) | smart | track | center
     "captions": True,
     "caption_words": 3,              # words per caption chunk
     "caption_uppercase": True,

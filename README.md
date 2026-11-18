@@ -7,7 +7,7 @@ YouTube link or video file
    → download (yt-dlp)
    → transcribe with word timings (faster-whisper, runs locally)
    → Claude picks the moments you asked for (or ClipForge cuts a part into reels) and writes title, hook, caption and hashtags
-   → render 1080×1920 clips: smart framing per shot (face close-up, or the whole frame for slides and wide shots),
+   → render 1080×1920 clips: the whole frame on a blurred background (or, if you choose, zoomed in on faces),
      animated word-by-word captions, hook banner, loudness levelled
    → review, tweak, ask Claude for changes, re-render, download
 ```
@@ -63,9 +63,9 @@ Double-click `setup.bat` once. It installs Python, ffmpeg, Deno and Claude Code 
     **Mark end** (**O**): the new reel appears, titled after its first words. **Esc** cancels. **N** adds a 30 s reel at the playhead.
   - Keys: **Space** play/pause, **Shift+I** / **Shift+O** move the selected reel's start / end to the playhead, **← →** step
     (Shift: finer), **+ −** zoom. Double-click a sentence on the timeline to start the selected reel there.
-  - **Framing**: *Smart* (the default: a close-up that follows the face when one person is on screen, and the whole frame on a
-    blurred background for slides, title cards, screens, wide shots and people far apart; it decides per shot), always follow
-    the face, center crop, or always the whole frame.
+  - **Framing**: *Whole frame* (the default: the full video, never zoomed in, on a blurred copy of itself). If you want close-ups,
+    pick *Zoom in on faces when found* (it decides per shot; face detection can be fooled by games and dark scenes),
+    *Always zoom in and follow the face* or *Always zoom in on the middle*, in Settings or for one reel.
   - **Generate** makes the 1080×1920 video file and downloads it to your computer as soon as it's ready (it shows
     *Generating… 45%* meanwhile). Each reel shows *Draft*, *Generated* or *Changed since generated*; a generated reel's button
     becomes **Download again**, and an edited one **Generate again**. **Generate all** (top) does every reel that needs it and
@@ -87,7 +87,7 @@ Double-click `setup.bat` once. It installs Python, ffmpeg, Deno and Claude Code 
 |---|---|
 | About your channel | The most useful one. Claude sees it on every video: your channel, audience and language, e.g. *"Fitness channel for beginners. Write captions in Bosnian."* What to look for in one particular video goes in the box in the **＋ New video** window. |
 | Clips per video / min / max length | The starting values for new videos (you can change them per video). 20–60 s works well everywhere. |
-| Framing | Smart (recommended), always follow the face, center crop, or always the whole frame. |
+| Framing | Whole frame, never zoomed in (recommended), or one of the zoomed-in modes (faces when found, always the face, the middle). They cut off the sides. |
 | Claude model | Default, Opus (best judgement) or Haiku (fastest). |
 | Speech model | `small` is a good balance on CPU. `medium` is more accurate but slower. |
 | Language | Leave empty to auto-detect, or set it (`bs`, `en`, `de`…). |

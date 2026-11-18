@@ -749,8 +749,9 @@ const WS_HTML = `
         <label>Caption<textarea id="wdCaption" data-field="caption" rows="3"></textarea></label>
         <label>Hashtags<input type="text" id="wdTags" data-field="hashtags"></label>
         <label>Framing<select id="wdCrop" data-field="crop_mode">
-          <option value="">Default (from Settings)</option><option value="smart">Smart (per shot)</option><option value="track">Always follow the face</option>
-          <option value="center">Center crop</option><option value="fit">Always the whole frame</option></select></label>
+          <option value="">Default (from Settings)</option><option value="fit">Whole frame, never zoomed in</option>
+          <option value="smart">Zoom in on faces when found</option><option value="track">Always zoom in, follow the face</option>
+          <option value="center">Always zoom in on the middle</option></select></label>
         <div class="reason" id="wdReason"></div>
         <div class="made-by" id="wdMade"></div>
         <div class="clip-err" id="wdErr"></div>

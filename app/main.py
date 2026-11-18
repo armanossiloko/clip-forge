@@ -272,6 +272,7 @@ class ClipEdit(BaseModel):
     hashtags: list[str] | str | None = None
     crop_mode: str | None = None
     show_hook: bool | None = None
+    look: dict | None = None  # partial: merged into the reel's look; a key set to null goes back to Settings
     rerender: bool = False
 
 
@@ -297,6 +298,8 @@ def edit_clip(job_id: str, clip_id: str, body: ClipEdit):
     if end - start < 1:
         raise HTTPException(400, "A clip must be at least 1 second long")
     data["start"], data["end"] = round(start, 2), round(end, 2)
+    if "look" in data:
+        data["look"] = pipeline.normalize_look({**(clip.get("look") or {}), **data["look"]})
     with pipeline._lock:
         # The UI sends every field on Apply, so only count real changes to what Claude wrote.
         if any(k in data and data[k] != clip.get(k) for k in ("start", "end", "title", "hook", "caption", "hashtags")):
@@ -307,6 +310,25 @@ def edit_clip(job_id: str, clip_id: str, body: ClipEdit):
         pipeline.queue_render(job, clip)
     elif clip.get("file"):
         pipeline._write_post_text(Path(clip["file"]).with_suffix(".txt"), clip)
+    return _public(job)
+
+
+class LookAll(BaseModel):
+    look: dict
+    show_hook: bool | None = None
+
+
+@app.post("/api/jobs/{job_id}/look-all")
+def look_all(job_id: str, body: LookAll):
+    """Give every reel of this video the same look (from the editor's "Use for all reels")."""
+    job = _job(job_id)
+    look = pipeline.normalize_look(body.look)
+    with pipeline._lock:
+        for c in job["clips"]:
+            c["look"] = dict(look)
+            if body.show_hook is not None:
+                c["show_hook"] = body.show_hook
+        pipeline.save(job)
     return _public(job)
 
 

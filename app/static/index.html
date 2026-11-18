@@ -103,10 +103,10 @@
       <legend>Look of the reels</legend>
       <label>Framing
         <select name="crop_mode">
-          <option value="smart">Smart: face close-ups, whole frame for slides and wide shots</option>
-          <option value="track">Always follow the speaker's face</option>
-          <option value="center">Center crop</option>
-          <option value="fit">Whole frame + blurred background</option>
+          <option value="fit">Whole frame, never zoomed in (recommended)</option>
+          <option value="smart">Zoom in on faces when it finds one (cuts off the sides)</option>
+          <option value="track">Always zoom in and follow the face (cuts off the sides)</option>
+          <option value="center">Always zoom in on the middle (cuts off the sides)</option>
         </select>
       </label>
       <label class="check"><input type="checkbox" name="captions"> Burn in captions</label>
